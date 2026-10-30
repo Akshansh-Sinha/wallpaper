@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Calendar</title>
+<style>
+  @font-face { font-family: "DM Mono"; src: url("fonts/DMMono-Regular.ttf"); font-weight: 400; }
+  @font-face { font-family: "DM Mono"; src: url("fonts/DMMono-Medium.ttf");  font-weight: 500; }
+  :root { --acc:#FF6A13; --onacc:#000; --ink:#EDEDED; --dim:#8A8A8A; --off:#232323; --past:#FF4437;
+    color-scheme: dark; box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background:#000; color:var(--ink); font-family:"DM Mono",ui-monospace,Menlo,monospace; overflow:hidden;
+    display:flex; flex-direction:column; align-items:center; }
+  .backdrop { position:fixed; inset:0; z-index:-1; pointer-events:none;
+    background: radial-gradient(circle at 18% 88%, color-mix(in srgb, var(--acc) 14%, transparent), transparent 55%),
+                radial-gradient(#2a2a2a 1.3px, transparent 1.8px) 0 0 / 22px 22px;
+    -webkit-mask-image: radial-gradient(ellipse at 50% 55%, #000 25%, transparent 78%);
+            mask-image: radial-gradient(ellipse at 50% 55%, #000 25%, transparent 78%); }
+  .clock-zone { flex: 0 0 21vh; }
+  .rule { height:1px; background:var(--off); }
+  .dow { text-align:center; font-size:11px; letter-spacing:.1em; color:var(--dim); padding-bottom:6px; }
+  .dow.we { color:#555; }
+  .empty::after { content:""; width:3px; height:3px; border-radius:50%; background:#2c2c2c; }
+
+  .dial { position:relative; width:min(84vw,350px); aspect-ratio:1; }
+  .dial > svg { width:100%; height:100%; display:block; }
+  .center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; }
+  .center .big { line-height:0; }
+  .center .w { font-size:14px; letter-spacing:.3em; color:var(--ink); padding-left:.3em; }
+  .center .m { font-size:11px; letter-spacing:.22em; color:var(--dim); margin-top:-6px; }
+  .week { width:min(88vw,430px); margin-top:22px; padding:12px 8px 8px; background:#0B0B0B; border:1px solid #242424; border-radius:26px;
+          display:grid; grid-template-columns:repeat(7,1fr); }
+  .wd { text-align:center; font-size:11px; letter-spacing:.1em; color:var(--dim); padding-bottom:6px; }
+  .wd.we { color:#555; }
+  .wn { height:38px; display:grid; place-items:center; font-size:16px; color:var(--ink); }
+  .wn.we { color:var(--dim); } .wn.past { color:var(--past); opacity:.78; }
+  .wn.today { width:34px; height:34px; margin:2px auto 0; border-radius:50%; background:var(--acc); color:var(--onacc); font-weight:500; }
+
+</style>
+</head>
+<body>
+<div class="backdrop"></div><div class="clock-zone"></div>
+<main class="dial">
+  <svg id="ring" viewBox="0 0 360 360"></svg>
+  <div class="center"><div class="big" id="big"></div><div class="w" id="w"></div><div class="m" id="m"></div></div>
+</main>
+<section class="week" id="week"></section>
+<script>
+  const G = {
+    A:"01110 10001 10001 11111 10001 10001 10001", B:"11110 10001 10001 11110 10001 10001 11110",
+    C:"01110 10001 10000 10000 10000 10001 01110", D:"11110 10001 10001 10001 10001 10001 11110",
+    E:"11111 10000 10000 11110 10000 10000 11111", F:"11111 10000 10000 11110 10000 10000 10000",
+    G:"01110 10001 10000 10111 10001 10001 01111", J:"00111 00010 00010 00010 00010 10010 01100",
+    L:"10000 10000 10000 10000 10000 10000 11111", M:"10001 11011 10101 10101 10001 10001 10001",
+    N:"10001 11001 10101 10011 10001 10001 10001", O:"01110 10001 10001 10001 10001 10001 01110",
+    P:"11110 10001 10001 11110 10000 10000 10000", R:"11110 10001 10001 11110 10100 10010 10001",
+    S:"01111 10000 10000 01110 00001 00001 11110", T:"11111 00100 00100 00100 00100 00100 00100",
+    U:"10001 10001 10001 10001 10001 10001 01110", V:"10001 10001 10001 10001 10001 01010 00100",
+    Y:"10001 10001 01010 00100 00100 00100 00100",
+    0:"01110 10001 10011 10101 11001 10001 01110", 1:"00100 01100 00100 00100 00100 00100 01110",
+    2:"01110 10001 00001 00010 00100 01000 11111", 3:"11110 00001 00001 01110 00001 00001 11110",
+    4:"00010 00110 01010 10010 11111 00010 00010", 5:"11111 10000 11110 00001 00001 10001 01110",
+    6:"00110 01000 10000 11110 10001 10001 01110", 7:"11111 00001 00010 00100 01000 01000 01000",
+    "%":"11001 11010 00010 00100 01000 01011 10011",
+    8:"01110 10001 10001 01110 10001 10001 01110", 9:"01110 10001 10001 01111 00001 00010 01100",
+  };
+  const MONTHS = [
+    { name:"JANUARY",   abbr:"JAN", acc:"#8DB8FF" }, { name:"FEBRUARY",  abbr:"FEB", acc:"#FF6E9C" },
+    { name:"MARCH",     abbr:"MAR", acc:"#7EE081" }, { name:"APRIL",     abbr:"APR", acc:"#4FC3F7" },
+    { name:"MAY",       abbr:"MAY", acc:"#F7A8D0" }, { name:"JUNE",      abbr:"JUN", acc:"#FFD23F" },
+    { name:"JULY",      abbr:"JUL", acc:"#2EE6C5" }, { name:"AUGUST",    abbr:"AUG", acc:"#FF8A5B" },
+    { name:"SEPTEMBER", abbr:"SEP", acc:"#B7D44A" }, { name:"OCTOBER",   abbr:"OCT", acc:"#FF6A13" },
+    { name:"NOVEMBER",  abbr:"NOV", acc:"#B794FF" }, { name:"DECEMBER",  abbr:"DEC", acc:"#EDEDED" },
+  ];
+  const DOW = ["M","T","W","T","F","S","S"];
+  const DAYNAMES = ["MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY","SUNDAY"];
+  const pad = n => String(n).padStart(2, "0");
+  const $ = id => document.getElementById(id);
+
+  // px = CSS pixels per dot cell. Unlit dots are drawn dim, like a real dot-matrix display.
+  function dotText(str, color, px, off = "#1d1d1d") {
+    const cols = String(str).length * 6 - 1;
+    let out = "";
+    [...String(str)].forEach((ch, i) => {
+      const g = G[ch].split(" ");
+      for (let y = 0; y < 7; y++) for (let x = 0; x < 5; x++)
+        out += `<circle cx="${(i*6+x+.5)*10}" cy="${(y+.5)*10}" r="3.7" fill="${g[y][x]==="1" ? color : off}"/>`;
+    });
+    return `<svg viewBox="0 0 ${cols*10} 70" width="${cols*px}" height="${7*px}">${out}</svg>`;
+  }
+
+  function currentDate() {   // test hook: ?date=2027-02-14
+    const p = new URLSearchParams(location.search).get("date");
+    if (p && /^\d{4}-\d{2}-\d{2}$/.test(p)) { const [y,mo,d] = p.split("-").map(Number); return new Date(y, mo-1, d); }
+    return new Date();
+  }
+  function ctx(now) {
+    const y = now.getFullYear(), mi = now.getMonth(), today = now.getDate();
+    const daysInMonth = new Date(y, mi+1, 0).getDate();
+    const offset = (new Date(y, mi, 1).getDay() + 6) % 7;           // Monday = 0
+    const dowIdx = (now.getDay() + 6) % 7;
+    return { y, mi, today, m: MONTHS[mi], daysInMonth, offset, dowIdx,
+             cells: Math.ceil((offset + daysInMonth) / 7) * 7, left: daysInMonth - today,
+             wd: DAYNAMES[dowIdx], date: new Date(y, mi, today) };
+  }
+  function applyAccent(c) {
+    document.documentElement.style.setProperty("--acc", c.m.acc);
+    document.title = `${c.m.name} ${c.y}`;
+  }
+  function gridHtml(c) {
+    let h = DOW.map((d,i) => `<div class="dow${i>=5?" we":""}">${d}</div>`).join("");
+    for (let i = 0; i < c.cells; i++) {
+      const d = i - c.offset + 1;
+      if (d < 1 || d > c.daysInMonth) { h += `<div class="day empty"></div>`; continue; }
+      const cls = d < c.today ? "past" : d === c.today ? "today" : i%7 >= 5 ? "we" : "";
+      h += `<div class="day ${cls}"${d===c.today?' aria-current="date"':""}>${d}</div>`;
+    }
+    return h;
+  }
+  function weekHtml(c) {
+    let w = DOW.map((d,i) => `<div class="wd${i>=5?" we":""}">${d}</div>`).join("");
+    for (let i = 0; i < 7; i++) {
+      const dt = new Date(c.y, c.mi, c.today - c.dowIdx + i);
+      const cls = dt < c.date ? "past" : dt.getTime() === c.date.getTime() ? "today" : i >= 5 ? "we" : "";
+      w += `<div class="wn ${cls}">${dt.getDate()}</div>`;
+    }
+    return w;
+  }
+  function isoWeek(d) {
+    const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+    return Math.ceil(((t - Date.UTC(t.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7);
+  }
+  const leftText = c => c.left === 0 ? "LAST DAY" : `${pad(c.left)} ${c.left===1?"DAY":"DAYS"} LEFT`;
+
+
+  function draw(c) {
+    const R = 150, cx = 180, cy = 180;
+    let s = "";
+    for (let d = 1; d <= c.daysInMonth; d++) {
+      const a = -Math.PI/2 + (d-1)/c.daysInMonth * Math.PI*2;
+      const x = (cx + R*Math.cos(a)).toFixed(1), y = (cy + R*Math.sin(a)).toFixed(1);
+      if (d < c.today)        s += `<circle cx="${x}" cy="${y}" r="5" fill="#FF4437" opacity=".85"/>`;
+      else if (d === c.today) s += `<circle cx="${x}" cy="${y}" r="14" fill="none" stroke="${c.m.acc}" stroke-opacity=".4" stroke-width="2"/><circle cx="${x}" cy="${y}" r="8.5" fill="${c.m.acc}"/>`;
+      else                    s += `<circle cx="${x}" cy="${y}" r="4.5" fill="#EDEDED" opacity=".6"/>`;
+    }
+    $("ring").innerHTML = s;
+    $("big").innerHTML = dotText(c.today, c.m.acc, 13);
+    $("w").textContent = c.wd;
+    $("m").textContent = `${c.m.name} ${c.y}`;
+    let w = DOW.map((d,i) => `<div class="wd${i>=5?" we":""}">${d}</div>`).join("");
+    for (let i = 0; i < 7; i++) {
+      const dt = new Date(c.y, c.mi, c.today - c.dowIdx + i);
+      const cls = dt < c.date ? "past" : dt.getTime() === c.date.getTime() ? "today" : i >= 5 ? "we" : "";
+      w += `<div class="wn ${cls}">${dt.getDate()}</div>`;
+    }
+    $("week").innerHTML = w;
+  }
+
+  let shownKey = "";
+  function tick() {
+    const now = currentDate(), key = now.toDateString();
+    if (key !== shownKey) { shownKey = key; const c = ctx(now); applyAccent(c); draw(c); }
+  }
+  tick();
+  setInterval(tick, 60 * 1000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
+</script>
+</body>
+</html>

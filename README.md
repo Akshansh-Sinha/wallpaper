@@ -11,3 +11,9 @@ Android SDK. Font: Fredoka (SIL OFL, see `assets/fonts/OFL.txt`).
 
 Build: push to GitHub, and the "Build APK" workflow uploads `app-debug.apk` as an artifact.
 Or open in Android Studio and run.
+
+## Designs
+The app ships two looks (`CMF`, `Tiles`), picked in the app and remembered on the phone. The nightly
+redraw uses the saved choice. Other looks live in `extra-designs/` (not packaged). To add one: copy its
+HTML into `app/src/main/assets/` and add a line to `Designs.kt`. `calendar-classic.html` also needs
+`extra-designs/fonts/Fredoka.ttf` copied into `assets/fonts/`.

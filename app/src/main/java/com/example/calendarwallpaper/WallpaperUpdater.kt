@@ -20,7 +20,6 @@ import android.webkit.WebViewClient
  * Must be called on the main thread; onDone is called exactly once, on the main thread.
  */
 object WallpaperUpdater {
-    const val PAGE = "file:///android_asset/calendar.html"
     private const val SETTLE_MS = 1500L   // give fonts + JS time to paint after load
     private const val TIMEOUT_MS = 10_000L
 
@@ -55,16 +54,20 @@ object WallpaperUpdater {
             }
         }
         main.postDelayed({ finish(false) }, TIMEOUT_MS)
-        web.loadUrl(PAGE)
+        web.loadUrl(Designs.url(app))
     }
 
     private fun capture(app: Context, web: WebView, w: Int, h: Int): Boolean = runCatching {
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         web.draw(Canvas(bmp))
-        // Safety check: the screen centre is inside the cream calendar card.
-        // If it came out dark, the WebView didn't paint, so keep the old wallpaper.
-        val p = bmp.getPixel(w / 2, h / 2)
-        if (Color.red(p) + Color.green(p) + Color.blue(p) < 300) return false
+        // Safety check: the page is mostly black, so look for bright pixels (numbers, accent colour).
+        // If the WebView didn't paint, the bitmap is all black and we keep the old wallpaper.
+        var bright = 0
+        for (y in 0 until h step 24) for (x in 0 until w step 24) {
+            val p = bmp.getPixel(x, y)
+            if (Color.red(p) + Color.green(p) + Color.blue(p) > 450) bright++
+        }
+        if (bright < 20) return false
         WallpaperManager.getInstance(app).setBitmap(
             bmp, null, true,
             WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK,
